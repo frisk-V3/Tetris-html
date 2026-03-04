@@ -3,76 +3,117 @@ using System.Drawing;
 using System.Windows.Forms;
 using System.Collections.Generic;
 
-public class TetrisGame : Form {
+public class Tetris : Form {
+    const int CanvasWidth = 10, CanvasHeight = 20, TileSize = 30;
+    int[,] grid = new int[CanvasWidth, CanvasHeight];
+    int score = 0;
     Timer timer = new Timer();
-    int[,] field = new int[10, 20];
-    int curX, curY, curType;
-    int[][,] blocks = {
-        new int[,] {{1,1,1,1}}, // I
-        new int[,] {{1,1},{1,1}}, // O
-        new int[,] {{0,1,0},{1,1,1}}, // T
-        new int[,] {{1,1,0},{0,1,1}}, // Z
-        new int[,] {{0,1,1},{1,1,0}}  // S
+    Point currentPos;
+    int[,] currentPiece;
+    Random rand = new Random();
+
+    // テトリミノの定義
+    int[][,] shapes = {
+        new int[,] { {1,1,1,1} }, // I
+        new int[,] { {1,1}, {1,1} }, // O
+        new int[,] { {0,1,0}, {1,1,1} }, // T
+        new int[,] { {0,1,1}, {1,1,0} }, // S
+        new int[,] { {1,1,0}, {0,1,1} }  // Z
     };
 
-    public TetrisGame() {
-        this.Text = "C# Tetris (csc.exe)";
-        this.ClientSize = new Size(200, 400);
+    public Tetris() {
+        this.Text = "Tetris";
+        this.ClientSize = new Size(CanvasWidth * TileSize, CanvasHeight * TileSize + 30);
         this.DoubleBuffered = true;
+        this.KeyDown += OnKeyDown;
+        
         timer.Interval = 500;
-        timer.Tick += (s, e) => { curY++; if(IsHit()) { curY--; LockBlock(); } Invalidated(); };
+        timer.Tick += (s, e) => { MovePiece(0, 1); this.Invalidate(); };
+        SpawnPiece();
         timer.Start();
-        Spawn();
     }
 
-    void Spawn() {
-        curX = 4; curY = 0; curType = new Random().Next(blocks.Length);
-        if(IsHit()) { timer.Stop(); MessageBox.Show("Game Over"); }
+    void SpawnPiece() {
+        currentPiece = shapes[rand.Next(shapes.Length)];
+        currentPos = new Point(CanvasWidth / 2 - 1, 0);
+        if (CheckCollision(0, 0)) {
+            timer.Stop();
+            MessageBox.Show("Game Over! Score: " + score);
+            Application.Restart();
+        }
     }
 
-    bool IsHit() {
-        var b = blocks[curType];
-        for(int y=0; y<b.GetLength(0); y++)
-            for(int x=0; x<b.GetLength(1); x++)
-                if(b[y,x] != 0 && (curX+x<0 || curX+x>=10 || curY+y>=20 || field[curX+x, curY+y] != 0)) return true;
+    bool CheckCollision(int dx, int dy, int[,] piece = null) {
+        int[,] p = piece ?? currentPiece;
+        for (int y = 0; y < p.GetLength(0); y++)
+            for (int x = 0; x < p.GetLength(1); x++)
+                if (p[y, x] != 0) {
+                    int nx = currentPos.X + x + dx, ny = currentPos.Y + y + dy;
+                    if (nx < 0 || nx >= CanvasWidth || ny >= CanvasHeight || (ny >= 0 && grid[nx, ny] != 0)) return true;
+                }
         return false;
     }
 
-    void LockBlock() {
-        var b = blocks[curType];
-        for(int y=0; y<b.GetLength(0); y++)
-            for(int x=0; x<b.GetLength(1); x++)
-                if(b[y,x] != 0) field[curX+x, curY+y] = 1;
-        
-        for(int y=19; y>=0; y--) {
-            bool full = true;
-            for(int x=0; x<10; x++) if(field[x,y]==0) full = false;
-            if(full) {
-                for(int ty=y; ty>0; ty--) for(int tx=0; tx<10; tx++) field[tx,ty] = field[tx,ty-1];
-                y++;
-            }
+    void MovePiece(int dx, int dy) {
+        if (!CheckCollision(dx, dy)) {
+            currentPos.X += dx; currentPos.Y += dy;
+        } else if (dy > 0) {
+            LockPiece();
+            ClearLines();
+            SpawnPiece();
         }
-        Spawn();
     }
 
-    protected override void OnKeyDown(KeyEventArgs e) {
-        int oldX = curX, oldY = curY;
-        if(e.KeyCode == Keys.Left) curX--;
-        if(e.KeyCode == Keys.Right) curX++;
-        if(e.KeyCode == Keys.Down) curY++;
-        if(IsHit()) { curX = oldX; curY = oldY; }
-        Invalidate();
+    void LockPiece() {
+        for (int y = 0; y < currentPiece.GetLength(0); y++)
+            for (int x = 0; x < currentPiece.GetLength(1); x++)
+                if (currentPiece[y, x] != 0) grid[currentPos.X + x, currentPos.Y + y] = 1;
+    }
+
+    void ClearLines() {
+        for (int y = CanvasHeight - 1; y >= 0; y--) {
+            bool full = true;
+            for (int x = 0; x < CanvasWidth; x++) if (grid[x, y] == 0) full = false;
+            if (full) {
+                for (int ty = y; ty > 0; ty--)
+                    for (int tx = 0; tx < CanvasWidth; tx++) grid[tx, ty] = grid[tx, ty - 1];
+                score += 100; y++;
+            }
+        }
+    }
+
+    void OnKeyDown(object sender, KeyEventArgs e) {
+        if (e.KeyCode == Keys.Left) MovePiece(-1, 0);
+        if (e.KeyCode == Keys.Right) MovePiece(1, 0);
+        if (e.KeyCode == Keys.Down) MovePiece(0, 1);
+        if (e.KeyCode == Keys.Up) RotatePiece();
+        this.Invalidate();
+    }
+
+    void RotatePiece() {
+        int r = currentPiece.GetLength(0), c = currentPiece.GetLength(1);
+        int[,] rotated = new int[c, r];
+        for (int y = 0; y < r; y++)
+            for (int x = 0; x < c; x++) rotated[x, r - 1 - y] = currentPiece[y, x];
+        if (!CheckCollision(0, 0, rotated)) currentPiece = rotated;
     }
 
     protected override void OnPaint(PaintEventArgs e) {
-        for(int x=0; x<10; x++) for(int y=0; y<20; y++)
-            if(field[x,y] != 0) e.Graphics.FillRectangle(Brushes.Blue, x*20, y*20, 19, 19);
+        Graphics g = e.Graphics;
+        // 背景と固定済みブロック
+        for (int x = 0; x < CanvasWidth; x++)
+            for (int y = 0; y < CanvasHeight; y++)
+                if (grid[x, y] != 0) g.FillRectangle(Brushes.Blue, x * TileSize, y * TileSize, TileSize - 1, TileSize - 1);
         
-        var b = blocks[curType];
-        for(int y=0; y<b.GetLength(0); y++)
-            for(int x=0; x<b.GetLength(1); x++)
-                if(b[y,x] != 0) e.Graphics.FillRectangle(Brushes.Red, (curX+x)*20, (curY+y)*20, 19, 19);
+        // 現在のブロック
+        for (int y = 0; y < currentPiece.GetLength(0); y++)
+            for (int x = 0; x < currentPiece.GetLength(1); x++)
+                if (currentPiece[y, x] != 0)
+                    g.FillRectangle(Brushes.Red, (currentPos.X + x) * TileSize, (currentPos.Y + y) * TileSize, TileSize - 1, TileSize - 1);
+        
+        g.DrawString("Score: " + score, this.Font, Brushes.Black, 10, CanvasHeight * TileSize + 5);
     }
 
-    public static void Main() { Application.Run(new TetrisGame()); }
+    [STAThread]
+    public static void Main() { Application.Run(new Tetris()); }
 }
