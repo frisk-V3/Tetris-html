@@ -1,4 +1,4 @@
-# Tetris Project Pack
+# Tetris-html Pack
 
 このプロジェクトは、Webブラウザで動く **HTML/JS版** をメインとし、
 おまけとしてWindowsネイティブで動く **C#版** を同梱したテトリス実装セットです。
