@@ -6,36 +6,51 @@ using System.Collections.Generic;
 public class Tetris : Form {
     const int CanvasWidth = 10, CanvasHeight = 20, TileSize = 30;
     int[,] grid = new int[CanvasWidth, CanvasHeight];
+    Color[,] gridColors = new Color[CanvasWidth, CanvasHeight];
     int score = 0;
     Timer timer = new Timer();
     Point currentPos;
-    int[,] currentPiece;
+    int[,] currentPiece, nextPiece;
+    Color currentColor, nextColor;
     Random rand = new Random();
+    bool isFullScreen = false;
 
-    // テトリミノの定義
-    int[][,] shapes = {
-        new int[,] { {1,1,1,1} }, // I
-        new int[,] { {1,1}, {1,1} }, // O
-        new int[,] { {0,1,0}, {1,1,1} }, // T
-        new int[,] { {0,1,1}, {1,1,0} }, // S
-        new int[,] { {1,1,0}, {0,1,1} }  // Z
+    // 10種類のミノ定義
+    (int[,] shape, Color color)[] shapes = {
+        (new int[,] { {1,1,1,1} }, Color.Cyan),        // I
+        (new int[,] { {1,1}, {1,1} }, Color.Yellow),    // O
+        (new int[,] { {0,1,0}, {1,1,1} }, Color.Purple), // T
+        (new int[,] { {0,1,1}, {1,1,0} }, Color.Green),  // S
+        (new int[,] { {1,1,0}, {0,1,1} }, Color.Red),    // Z
+        (new int[,] { {1,0,0}, {1,1,1} }, Color.Orange), // L
+        (new int[,] { {0,0,1}, {1,1,1} }, Color.Blue),   // J
+        (new int[,] { {1} }, Color.White),              // Dot (8)
+        (new int[,] { {1,1} }, Color.Pink),             // Mini-I (9)
+        (new int[,] { {1,0}, {1,1} }, Color.Lime)        // Mini-L (10)
     };
 
     public Tetris() {
-        this.Text = "Tetris";
-        this.ClientSize = new Size(CanvasWidth * TileSize, CanvasHeight * TileSize + 30);
+        this.Text = "Super Tetris 10";
+        this.ClientSize = new Size(CanvasWidth * TileSize + 150, CanvasHeight * TileSize + 50);
         this.DoubleBuffered = true;
+        this.BackColor = Color.FromArgb(20, 20, 20);
         this.KeyDown += OnKeyDown;
         
         timer.Interval = 500;
         timer.Tick += (s, e) => { MovePiece(0, 1); this.Invalidate(); };
+        
+        var first = shapes[rand.Next(shapes.Length)];
+        nextPiece = first.shape; nextColor = first.color;
         SpawnPiece();
         timer.Start();
     }
 
     void SpawnPiece() {
-        currentPiece = shapes[rand.Next(shapes.Length)];
-        currentPos = new Point(CanvasWidth / 2 - 1, 0);
+        currentPiece = nextPiece; currentColor = nextColor;
+        var next = shapes[rand.Next(shapes.Length)];
+        nextPiece = next.shape; nextColor = next.color;
+        
+        currentPos = new Point(CanvasWidth / 2 - currentPiece.GetLength(1) / 2, 0);
         if (CheckCollision(0, 0)) {
             timer.Stop();
             MessageBox.Show("Game Over! Score: " + score);
@@ -67,7 +82,10 @@ public class Tetris : Form {
     void LockPiece() {
         for (int y = 0; y < currentPiece.GetLength(0); y++)
             for (int x = 0; x < currentPiece.GetLength(1); x++)
-                if (currentPiece[y, x] != 0) grid[currentPos.X + x, currentPos.Y + y] = 1;
+                if (currentPiece[y, x] != 0) {
+                    grid[currentPos.X + x, currentPos.Y + y] = 1;
+                    gridColors[currentPos.X + x, currentPos.Y + y] = currentColor;
+                }
     }
 
     void ClearLines() {
@@ -76,18 +94,33 @@ public class Tetris : Form {
             for (int x = 0; x < CanvasWidth; x++) if (grid[x, y] == 0) full = false;
             if (full) {
                 for (int ty = y; ty > 0; ty--)
-                    for (int tx = 0; tx < CanvasWidth; tx++) grid[tx, ty] = grid[tx, ty - 1];
+                    for (int tx = 0; tx < CanvasWidth; tx++) {
+                        grid[tx, ty] = grid[tx, ty - 1];
+                        gridColors[tx, ty] = gridColors[tx, ty - 1];
+                    }
                 score += 100; y++;
             }
         }
     }
 
     void OnKeyDown(object sender, KeyEventArgs e) {
-        if (e.KeyCode == Keys.Left) MovePiece(-1, 0);
+        if (e.KeyCode == Keys.Q) MovePiece(-1, 0); // Qで左
+        if (e.KeyCode == Keys.W) RotatePiece();    // Wで回転
         if (e.KeyCode == Keys.Right) MovePiece(1, 0);
         if (e.KeyCode == Keys.Down) MovePiece(0, 1);
-        if (e.KeyCode == Keys.Up) RotatePiece();
+        if (e.KeyCode == Keys.F11) ToggleFullScreen(); // F11でフルスクリーン
         this.Invalidate();
+    }
+
+    void ToggleFullScreen() {
+        if (!isFullScreen) {
+            this.FormBorderStyle = FormBorderStyle.None;
+            this.WindowState = FormWindowState.Maximized;
+        } else {
+            this.FormBorderStyle = FormBorderStyle.Sizable;
+            this.WindowState = FormWindowState.Normal;
+        }
+        isFullScreen = !isFullScreen;
     }
 
     void RotatePiece() {
@@ -95,23 +128,53 @@ public class Tetris : Form {
         int[,] rotated = new int[c, r];
         for (int y = 0; y < r; y++)
             for (int x = 0; x < c; x++) rotated[x, r - 1 - y] = currentPiece[y, x];
-        if (!CheckCollision(0, 0, rotated)) currentPiece = rotated;
+        
+        int[] kicks = { 0, 1, -1, 2, -2 };
+        foreach (int k in kicks) {
+            if (!CheckCollision(k, 0, rotated)) {
+                currentPos.X += k;
+                currentPiece = rotated;
+                return;
+            }
+        }
     }
 
     protected override void OnPaint(PaintEventArgs e) {
         Graphics g = e.Graphics;
-        // 背景と固定済みブロック
+        // 描画オフセットの計算（中央寄せ用）
+        int offsetX = (this.ClientSize.Width - (CanvasWidth * TileSize + 120)) / 2;
+        int offsetY = (this.ClientSize.Height - (CanvasHeight * TileSize)) / 2;
+
+        // 盤面の背景
+        g.FillRectangle(Brushes.Black, offsetX, offsetY, CanvasWidth * TileSize, CanvasHeight * TileSize);
+        g.DrawRectangle(Pens.Gray, offsetX, offsetY, CanvasWidth * TileSize, CanvasHeight * TileSize);
+
+        // 固定済みブロック
         for (int x = 0; x < CanvasWidth; x++)
             for (int y = 0; y < CanvasHeight; y++)
-                if (grid[x, y] != 0) g.FillRectangle(Brushes.Blue, x * TileSize, y * TileSize, TileSize - 1, TileSize - 1);
+                if (grid[x, y] != 0) DrawTile(g, gridColors[x, y], offsetX + x * TileSize, offsetY + y * TileSize);
         
         // 現在のブロック
         for (int y = 0; y < currentPiece.GetLength(0); y++)
             for (int x = 0; x < currentPiece.GetLength(1); x++)
                 if (currentPiece[y, x] != 0)
-                    g.FillRectangle(Brushes.Red, (currentPos.X + x) * TileSize, (currentPos.Y + y) * TileSize, TileSize - 1, TileSize - 1);
+                    DrawTile(g, currentColor, offsetX + (currentPos.X + x) * TileSize, offsetY + (currentPos.Y + y) * TileSize);
         
-        g.DrawString("Score: " + score, this.Font, Brushes.Black, 10, CanvasHeight * TileSize + 5);
+        // NEXT表示
+        int nextX = offsetX + CanvasWidth * TileSize + 30;
+        g.DrawString("NEXT", new Font("Arial", 12, FontStyle.Bold), Brushes.White, nextX, offsetY);
+        for (int y = 0; y < nextPiece.GetLength(0); y++)
+            for (int x = 0; x < nextPiece.GetLength(1); x++)
+                if (nextPiece[y, x] != 0)
+                    DrawTile(g, nextColor, nextX + x * TileSize, offsetY + 30 + y * TileSize);
+
+        g.DrawString("Score: " + score, new Font("Arial", 12), Brushes.White, nextX, offsetY + 150);
+        g.DrawString("Q: Left / W: Rotate\nF11: FullScreen", new Font("Arial", 9), Brushes.Gray, nextX, offsetY + 200);
+    }
+
+    void DrawTile(Graphics g, Color color, int px, int py) {
+        g.FillRectangle(new SolidBrush(color), px, py, TileSize - 1, TileSize - 1);
+        g.DrawRectangle(new Pen(Color.FromArgb(50, 255, 255, 255)), px, py, TileSize - 1, TileSize - 1);
     }
 
     [STAThread]
